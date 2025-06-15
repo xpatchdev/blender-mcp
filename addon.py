@@ -29,7 +29,7 @@ bl_info = {
 RODIN_FREE_TRIAL_KEY = "k9TcfFoEhNd9cCPP2guHAHHHkctZHIRhZDywZ1euGUXwihbYLpOjQhofby80NJez"
 
 class BlenderMCPServer:
-    def __init__(self, host='localhost', port=9876):
+    def __init__(self, host='0.0.0.0', port=9876):
         self.host = host
         self.port = port
         self.running = False
@@ -402,18 +402,70 @@ class BlenderMCPServer:
         """Execute arbitrary Blender Python code"""
         # This is powerful but potentially dangerous - use with caution
         try:
-            # Create a local namespace for execution
-            namespace = {"bpy": bpy}
+            # Strip dangerous imports and add safe ones
+            safe_code = self._sanitize_code(code)
+            
+            # Create a local namespace for execution with only safe modules
+            namespace = {
+                "bpy": bpy,
+                "mathutils": mathutils,
+                "__builtins__": {
+                    "print": print,
+                    "len": len,
+                    "range": range,
+                    "str": str,
+                    "int": int,
+                    "float": float,
+                    "list": list,
+                    "dict": dict,
+                    "tuple": tuple,
+                    "abs": abs,
+                    "min": min,
+                    "max": max,
+                    "round": round,
+                    "enumerate": enumerate,
+                    "zip": zip,
+                }
+            }
 
             # Capture stdout during execution, and return it as result
             capture_buffer = io.StringIO()
             with redirect_stdout(capture_buffer):
-                exec(code, namespace)
+                exec(safe_code, namespace)
             
             captured_output = capture_buffer.getvalue()
             return {"executed": True, "result": captured_output}
         except Exception as e:
             raise Exception(f"Code execution error: {str(e)}")
+    
+    def _sanitize_code(self, code):
+        """Remove dangerous imports and statements from code"""
+        import re
+        
+        # Remove import statements (except safe Blender-related ones)
+        lines = code.split('\n')
+        safe_lines = []
+        
+        for line in lines:
+            stripped_line = line.strip()
+            
+            # Skip dangerous import patterns
+            if (stripped_line.startswith('import ') or 
+                stripped_line.startswith('from ') or
+                '__import__' in stripped_line or
+                'exec(' in stripped_line or
+                'eval(' in stripped_line or
+                'open(' in stripped_line or
+                'file(' in stripped_line):
+                # Log what was stripped for transparency
+                print(f"Stripped potentially unsafe line: {stripped_line}")
+                continue
+                
+            safe_lines.append(line)
+        
+        # Add safe imports at the beginning
+        safe_code = "import bpy\nimport mathutils\n" + '\n'.join(safe_lines)
+        return safe_code
     
     
 
